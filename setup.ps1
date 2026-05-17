@@ -74,6 +74,13 @@ if (Test-Path $oldMain) {
     Rename-Item $oldMain $newMain
 }
 
+# ---------------- Rename .iml file if exists ----------------
+$oldIml = Join-Path $repoRoot "$oldLeaf.iml"
+$newIml = Join-Path $repoRoot "$newLeaf.iml"
+if (Test-Path $oldIml) {
+    Rename-Item $oldIml $newIml
+}
+
 # ---------------- UPDATE KOTLIN FILES ----------------
 
 $ktFiles = Get-ChildItem $kotlinRoot -Recurse -Filter *.kt
