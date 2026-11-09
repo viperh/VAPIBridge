@@ -1,4 +1,4 @@
-package org.me.qviperh.mCTemplate.config
+﻿package me.qviperh.vAPIBridge.config
 
 import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.configuration.file.YamlConfiguration

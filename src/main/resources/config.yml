@@ -1,11 +1,9 @@
-database:
-  enabled: false
-  jdbcUrl: "jdbc:postgresql://localhost:5432/mctemplate"
-  username: "postgres"
-  password: "changeme"
-  pool:
-    maximumPoolSize: 10
-    minimumIdle: 2
-    connectionTimeoutMs: 10000
-    idleTimeoutMs: 600000
-    maxLifetimeMs: 1800000
+http:
+  host: 127.0.0.1
+  port: 8085
+  api-key: change-me
+
+grpc:
+  host: 127.0.0.1
+  port: 8086
+  api-key: change-me

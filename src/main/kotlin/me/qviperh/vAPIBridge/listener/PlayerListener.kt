@@ -1,4 +1,4 @@
-package org.me.qviperh.mCTemplate.listener
+﻿package me.qviperh.vAPIBridge.listener
 
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
