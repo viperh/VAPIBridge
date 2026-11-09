@@ -1,13 +1,22 @@
-# MCTemplate
+# VAPIBridge
 
-A Kotlin starter template for [Folia](https://papermc.io/software/folia) / Paper plugins (API 1.21). Comes wired with auto-discovered commands, a subcommand registry, an event listener scaffold, an external YAML config helper, and an optional HikariCP + PostgreSQL pool.
+> ⚠️ **Work in progress.** VAPIBridge is still in early development. Endpoints, payloads and config keys may change without notice. Don't use it on a production server yet.
 
-## Stack
+A [Folia](https://papermc.io/software/folia) / Paper plugin that runs an HTTP + WebSocket API inside your Minecraft server. External apps (bots, dashboards, web panels) can read server and player state, send messages, and subscribe to live game events.
 
-- Kotlin 2.1.0, Java 21
-- Folia API `1.21.11-R0.1-SNAPSHOT` (PaperMC repo)
-- Maven (shade plugin, `minimizeJar`, with `org.postgresql` and `com.zaxxer.hikari` relocated under `<groupId>.<artifact>.libs`)
-- HikariCP 7.0.2, PostgreSQL JDBC 42.7.10
+## Features
+
+- Embedded [Ktor](https://ktor.io) server (CIO engine) that starts and stops with the plugin
+- Bearer-token API key authentication
+- REST endpoints for server info, online players, broadcasts and direct messages
+- WebSocket event stream with per-topic subscriptions
+- Folia-safe: all game access goes through the global, region and entity schedulers
+- Messages use [MiniMessage](https://docs.advntr.dev/minimessage/format.html) formatting
+
+## Requirements
+
+- Folia or Paper 1.21+
+- Java 21
 
 ## Build
 
@@ -15,126 +24,128 @@ A Kotlin starter template for [Folia](https://papermc.io/software/folia) / Paper
 mvn clean package
 ```
 
-The shaded jar lands at `target/MCTemplate-1.0.0.jar`. Drop it into your server's `plugins/` directory.
+The jar is written to `target/VAPIBridge-1.0.0.jar`. Put it in your server's `plugins/` folder. Kotlin and Ktor are downloaded by the server at startup through `plugin.yml` `libraries`.
 
-## Quick start — rename the template
+## Configuration
 
-`setup.ps1` rewrites every package, import, the main class, the Maven coordinates, and `plugin.yml` in one shot, then deletes itself.
+`plugins/VAPIBridge/config.yml` is created on first start:
 
-```powershell
-.\setup.ps1 -GroupId com.example -PluginName CoolPlugin -Description "..." -Author "you"
+```yaml
+http:
+  host: 127.0.0.1   # bind address; use 0.0.0.0 to expose it outside the machine
+  port: 8085
+  api-key: change-me
+
+grpc:               # reserved, not implemented yet
+  host: 127.0.0.1
+  port: 8086
+  api-key: change-me
 ```
 
-After it runs, re-import the project in your IDE.
+**Change `http.api-key` before you expose the API.** The plugin logs a warning while it is still `change-me`.
+
+## Authentication
+
+Every endpoint except `/health` needs the API key, sent either way:
+
+- Header: `Authorization: Bearer <api-key>`
+- Query parameter: `?token=<api-key>` (handy for WebSocket clients that can't set headers)
+
+## REST API
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| `GET` | `/health` | | `{"status":"ok"}` (no auth) |
+| `GET` | `/v1/server` | | Server name, version, Minecraft version, online count, max players |
+| `POST` | `/v1/server/broadcast` | `{"text":"<MiniMessage>"}` | `204` |
+| `GET` | `/v1/players` | | List of online players |
+| `GET` | `/v1/players/{uuid}` | | A single online player |
+| `POST` | `/v1/players/{uuid}/message` | `{"text":"<MiniMessage>"}` | `204` |
+| `GET` | `/v1/topics` | | Names of the available event topics |
+
+Player objects look like this:
+
+```json
+{ "uuid": "…", "name": "Steve", "world": "world", "x": 12.5, "y": 64.0, "z": -3.2 }
+```
+
+Errors come back as `{"error":"…"}` with status `400` (bad input), `404` (player not online), `409` or `500`.
+
+### Example
+
+```sh
+curl -H "Authorization: Bearer $KEY" http://127.0.0.1:8085/v1/players
+
+curl -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+     -d '{"text":"<gold>Server restarting in 5 minutes"}' \
+     http://127.0.0.1:8085/v1/server/broadcast
+```
+
+## WebSocket events
+
+Connect to `ws://<host>:<port>/v1/events?token=<api-key>` and send JSON commands:
+
+```json
+{ "op": "subscribe",   "topics": ["player.join", "block.break"] }
+{ "op": "unsubscribe", "topics": ["block.break"] }
+{ "op": "list" }
+```
+
+The server replies with your current subscriptions or an error:
+
+```json
+{ "type": "subscribed", "topics": ["player.join"] }
+{ "type": "error", "topics": ["foo.bar"], "error": "unknown topics" }
+```
+
+Events arrive like this:
+
+```json
+{ "topic": "player.join", "ts": 1762686000000, "data": { "uuid": "…", "name": "Steve" } }
+```
+
+### Topics
+
+| Topic | `data` fields |
+|---|---|
+| `player.join` | `uuid`, `name` |
+| `player.quit` | `uuid`, `name` |
+| `block.break` | `player`, `block`, `world`, `x`, `y`, `z` |
+| `block.place` | `player`, `block`, `world`, `x`, `y`, `z` |
+
+The plugin only registers a Bukkit listener for a topic while at least one client is subscribed to it. Each connection buffers up to 256 messages; slow clients lose the oldest ones first.
+
+### Adding a topic
+
+Register it in `defaultRegistry()` in [`EventRegistry.kt`](src/main/kotlin/me/qviperh/vAPIBridge/events/EventRegistry.kt):
+
+```kotlin
+register("player.chat", AsyncChatEvent::class) { e ->
+    buildJsonObject {
+        put("uuid", e.player.uniqueId.toString())
+        put("message", PlainTextComponentSerializer.plainText().serialize(e.message()))
+    }
+}
+```
 
 ## Project layout
 
 ```
-src/main/kotlin/org/me/qviperh/mCTemplate/
-  MCTemplate.kt              # JavaPlugin entrypoint
-  command/
-    AsyncCommand.kt          # base class — typed sender + permission gating
-    AsyncCommandManager.kt   # reflection-based command discovery
-    CommandMetadata.kt       # @CommandMetadata annotation
-    CommandWrapper.kt        # bridges AsyncCommand to Bukkit's CommandExecutor
-    SubCommand.kt
-    SubCommandRegistry.kt
-    example/                 # PingCommand, HelpCommand, TestCommand + subs
-  listener/
-    BaseListener.kt          # auto-registers itself with the plugin manager
-    PlayerListener.kt
-  config/
-    ExternalConfig.kt        # load/reload/save arbitrary YAML files
-  database/
-    DatabaseManager.kt       # HikariCP pool + executeAsync / queryAsync
-src/main/resources/
-  plugin.yml
-  config.yml
+src/main/kotlin/me/qviperh/vAPIBridge/
+  VAPIBridge.kt        # plugin entry point, starts/stops the HTTP server
+  Settings.kt          # reads http.* from config.yml
+  Schedulers.kt        # onGlobal / onRegion / onEntity suspend helpers for Folia
+  events/              # EventHub (subscriptions) and EventRegistry (topics)
+  http/                # Ktor module, auth, REST routes, WebSocket handler
+  config/              # ExternalConfig helper for extra YAML files
+  listener/            # Bukkit listener scaffolding
 ```
 
-## Adding a command
+## Roadmap
 
-Annotate any subclass of `AsyncCommand<T>` with `@CommandMetadata` and drop it under the `command/` package — `AsyncCommandManager` scans the plugin jar (or the classes dir during dev) on enable and registers everything it finds.
-
-```kotlin
-@CommandMetadata(
-    command = "ping",
-    aliases = ["pong"],
-    description = "Pings the server",
-    usage = "/ping",
-    permission = "mctemplate.ping"
-)
-class PingCommand : AsyncCommand<CommandSender>(CommandSender::class.java) {
-    override fun execute(sender: CommandSender, args: Array<String>) {
-        sender.sendMessage(Component.text("Pong!").color(NamedTextColor.GREEN))
-    }
-    override fun tabComplete(sender: CommandSender, args: Array<String>) = emptyList<String>()
-}
-```
-
-Type the sender (`AsyncCommand<Player>`) to restrict execution — non-matching senders get a red "this command can only be executed by..." message automatically. Permission checks are also handled by the base class.
-
-### Subcommands
-
-Two patterns ship in the template:
-
-1. **Nested `AsyncCommand`s** via `addSubCommand(...)` — see how `AsyncCommand.onCommand` dispatches the first arg.
-2. **`SubCommandRegistry<T>`** — see `command/example/test/TestCommand.kt`. Register `SubCommand<T>` instances and the registry handles dispatch, tab completion, permission filtering, and `/<cmd>` help output.
-
-## Adding a listener
-
-Extend `BaseListener` — registration with the plugin manager happens in its `init` block. Just instantiate it from `onEnable`:
-
-```kotlin
-PlayerListener(this)
-```
-
-## Database
-
-Disabled by default. Flip it on in `config.yml`:
-
-```yaml
-database:
-  enabled: true
-  jdbcUrl: "jdbc:postgresql://localhost:5432/mydb"
-  username: "postgres"
-  password: "..."
-  pool:
-    maximumPoolSize: 10
-    minimumIdle: 2
-    connectionTimeoutMs: 10000
-    idleTimeoutMs: 600000
-    maxLifetimeMs: 1800000
-```
-
-Then use the manager from your code:
-
-```kotlin
-plugin.databaseManager.executeAsync { conn ->
-    conn.prepareStatement("INSERT INTO foo (bar) VALUES (?)").use { ps ->
-        ps.setString(1, "baz")
-        ps.executeUpdate()
-    }
-}
-
-plugin.databaseManager.queryAsync { conn ->
-    conn.prepareStatement("SELECT count(*) FROM foo").use { ps ->
-        ps.executeQuery().use { rs -> if (rs.next()) rs.getInt(1) else 0 }
-    }
-}.thenAccept { count -> plugin.logger.info("rows: $count") }
-```
-
-The pool and its executor are torn down in `onDisable`.
-
-## External config files
-
-```kotlin
-val messages = ExternalConfig("messages.yml", this) // copies from resources if missing
-val prefix = messages.configuration.getString("prefix")
-messages.reload()
-messages.save()
-```
+- gRPC API (the `grpc` config section is reserved for it)
+- More event topics and endpoints
 
 ## License
 
-[MIT](LICENSE) — free for everyone to use, modify, and distribute.
+[MIT](LICENSE)
