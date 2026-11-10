@@ -3,7 +3,19 @@ http:
   port: 8085
   api-key: change-me
 
-grpc:
-  host: 127.0.0.1
-  port: 8086
-  api-key: change-me
+
+
+blocked-commands:
+  - stop
+  - restart
+  - reload
+  - op
+  - deop
+  - lp
+  - luckperms
+  - ban
+  - tempban
+  - ipban
+  - kick
+  - mute
+  - tempmute

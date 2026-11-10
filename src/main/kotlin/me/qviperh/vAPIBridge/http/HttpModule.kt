@@ -21,11 +21,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.qviperh.vAPIBridge.Settings
 import me.qviperh.vAPIBridge.VAPIBridge
+import me.qviperh.vAPIBridge.commands.CommandRunner
 import me.qviperh.vAPIBridge.events.EventHub
-import me.viperh.vHB.http.eventRoutes
-import me.viperh.vHB.http.healthRoutes
-import me.viperh.vHB.http.playerRoutes
-import me.viperh.vHB.http.serverRoutes
+import me.qviperh.vAPIBridge.metrics.PerformanceCollector
+import me.qviperh.vAPIBridge.metrics.ServerInfoCollector
 import java.security.MessageDigest
 import kotlin.time.Duration.Companion.seconds
 
@@ -80,10 +79,10 @@ fun Application.httpModule(plugin: VAPIBridge, hub: EventHub, settings: Settings
     }
 
     routing {
-        healthRoutes()
+        healthRoutes(plugin)
         authenticate("api-key") {
-            serverRoutes(plugin)
-            playerRoutes(plugin)
+            serverRoutes(plugin, plugin.info, plugin.perf, plugin.commandRunner)
+            playerRoutes(plugin, plugin.commandRunner)
             eventRoutes(hub)
         }
     }

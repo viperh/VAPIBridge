@@ -1,5 +1,6 @@
-package me.viperh.vHB.http
+package me.qviperh.vAPIBridge.http
 
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -16,13 +17,12 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import me.qviperh.vAPIBridge.events.EventHub
 import me.qviperh.vAPIBridge.events.Subscriber
-import me.qviperh.vAPIBridge.http.ApiJson
 
 @Serializable
 data class WsCommand(val op: String, val topics: List<String> = emptyList())
 
 fun Route.eventRoutes(hub: EventHub) {
-    get("/v1/topics") { call.respond(hub.registry.topics.toList()) }
+    get("/v1/topics") { call.respond(HttpStatusCode.OK, hub.registry.topics.toList()) }
 
     webSocket("/v1/events") {
         val outbox = Channel<String>(256, BufferOverflow.DROP_OLDEST)

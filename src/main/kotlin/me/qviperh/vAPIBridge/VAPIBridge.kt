@@ -4,16 +4,27 @@ import io.ktor.server.cio.CIO
 import io.ktor.server.cio.CIOApplicationEngine
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
+import me.qviperh.vAPIBridge.commands.CommandRunner
 import org.bukkit.plugin.java.JavaPlugin
 import me.qviperh.vAPIBridge.events.EventHub
 import me.qviperh.vAPIBridge.events.defaultRegistry
 import me.qviperh.vAPIBridge.http.httpModule
+import me.qviperh.vAPIBridge.metrics.PerformanceCollector
+import me.qviperh.vAPIBridge.metrics.ServerInfoCollector
 
 class VAPIBridge : JavaPlugin() {
 
     private var http: EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine.Configuration>? = null
 
     lateinit var hub: EventHub
+        private set
+
+    lateinit var info: ServerInfoCollector
+        private set
+    lateinit var perf: PerformanceCollector
+        private set
+
+    lateinit var commandRunner: CommandRunner
         private set
 
     override fun onEnable() {
@@ -29,7 +40,9 @@ class VAPIBridge : JavaPlugin() {
 
 
             instance = this
-
+            info = ServerInfoCollector(this)
+            perf = PerformanceCollector(this)
+            commandRunner = CommandRunner(this, settings.blockedCommands)
 
             logger.info("$name has been enabled!")
         } catch (exception: Exception) {
@@ -40,6 +53,7 @@ class VAPIBridge : JavaPlugin() {
     }
 
     override fun onDisable() {
+
         http?.stop(gracePeriodMillis=1000, timeoutMillis=3000)
         http = null
         if (::hub.isInitialized) hub.shutdown()
